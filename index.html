@@ -99,8 +99,8 @@
   .cost { font-variant-numeric: tabular-nums; color: var(--muted); }
   li.checked .name { text-decoration: line-through; text-decoration-color: var(--muted); }
   .empty { padding: 24px; text-align: center; color: var(--muted); }
-  .missing-box { margin-top: 16px; }
-  .missing-box textarea { width: 100%; min-height: 80px; font: inherit; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+  .copy-row { margin-bottom: 12px; }
+  #copyBox textarea { width: 100%; min-height: 80px; font: inherit; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
   .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 
   dialog {
@@ -118,7 +118,7 @@
   button.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
   button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   #copyBox { margin-top: 10px; }
-  #copyBox textarea { width: 100%; min-height: 120px; font: inherit; font-size: .85rem; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  #copyBox .sub { margin: 0 0 6px; font-size: .85rem; color: var(--muted); }
   .calc-bar {
     position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2;
     background: var(--card); border: 1px solid var(--accent); border-radius: 12px;
@@ -177,6 +177,14 @@
     <input type="search" id="search" placeholder="Search states…">
   </div>
 
+  <div class="copy-row">
+    <button id="copyList">Copy list of states I don't have</button>
+    <div id="copyBox" hidden>
+      <p class="sub">Copying isn't allowed here. Select the text below and copy it yourself.</p>
+      <textarea id="copyText" readonly></textarea>
+    </div>
+  </div>
+
   <div id="calcBar" class="calc-bar" hidden>
     <div class="calc-head">
       <div><div class="label">Selected</div><div class="calc-num" id="calcCount">0 states</div></div>
@@ -198,15 +206,6 @@
 
   <ul class="list" id="list"></ul>
 
-  <div class="missing-box">
-    <div class="row-actions">
-      <button id="copyMissing">Copy list of states I don't have</button>
-    </div>
-    <div id="copyBox" hidden>
-      <p class="sub">Copying isn't allowed here. Select the text below and copy it yourself.</p>
-      <textarea id="copyText" readonly></textarea>
-    </div>
-  </div>
 </main>
 
 <dialog id="settings">
@@ -215,14 +214,6 @@
     <button id="closeSettings">Done</button>
   </div>
   <div class="dlg-body">
-    <section class="card">
-      <h3>Share a blank copy</h3>
-      <p>Send people the link to this page. Each person gets their own blank checklist, and nothing they check changes yours. You can also copy the full list as text to paste into a message.</p>
-      <div class="row-actions">
-        <button class="primary" id="shareText">Copy blank list as text</button>
-      </div>
-    </section>
-
     <section class="card">
       <h3>Reset</h3>
       <p>Clear your check marks or your cost calculator picks.</p>
@@ -294,6 +285,12 @@ function render() {
   $("progressBar").style.width = list.length ? (have.length / list.length * 100) + "%" : "0";
 
   const calc = filter === "calc";
+  $("copyList").textContent = {
+    all: "Copy list of all states",
+    have: "Copy list of states I have",
+    need: "Copy list of states I don't have",
+    calc: "Copy list of selected states",
+  }[filter];
   $("calcBar").hidden = !calc;
   $("list").classList.toggle("calc", calc);
   if (calc) {
@@ -357,16 +354,10 @@ function render() {
   }
 }
 
-function listAsText(l) {
-  return l.map((s) => `☐ ${s.name} — ${money(s.cost)}${s.note ? ` (${s.note})` : ""}`).join("\n");
-}
-
 async function copy(text, msg) {
   try { await navigator.clipboard.writeText(text); toast(msg); $("copyBox").hidden = true; }
   catch {
     const box = $("copyBox");
-    const dlg = $("settings");
-    (dlg.open ? dlg.querySelector(".dlg-body") : document.querySelector("main")).prepend(box);
     $("copyText").value = text;
     box.hidden = false;
     $("copyText").focus();
@@ -406,6 +397,7 @@ document.querySelectorAll(".tabs[role=tablist] button").forEach((b) =>
   b.addEventListener("click", () => {
     document.querySelectorAll(".tabs[role=tablist] button").forEach((x) => x.classList.toggle("active", x === b));
     filter = b.dataset.filter;
+    $("copyBox").hidden = true;
     render();
   })
 );
@@ -417,15 +409,34 @@ $("calcNeed").addEventListener("click", () => {
 $("calcClear").addEventListener("click", () => {
   picked.clear(); save(PICK_KEY, []); render();
 });
-$("copyMissing").addEventListener("click", () => {
+$("copyList").addEventListener("click", () => {
+  const sum = (arr) => money(arr.reduce((t, s) => t + (Number(s.cost) || 0), 0));
+  const have = list.filter((s) => checked.has(s.name));
   const need = list.filter((s) => !checked.has(s.name));
-  if (!need.length) return toast("You have them all!");
-  copy(`States I still need (${need.length}):\n` + listAsText(need), "Copied states you don't have");
+  const sel = list.filter((s) => picked.has(s.name));
+  const lines = (arr, box) => arr.map((s) => `${box(s)} ${s.name} — ${money(s.cost)}${s.note ? ` (${s.note})` : ""}`).join("\n");
+  let text, msg;
+  if (filter === "all") {
+    text = `All states (I have ${have.length} of ${list.length}):\n` + lines(list, (s) => checked.has(s.name) ? "☑" : "☐");
+    msg = "Copied all states";
+  } else if (filter === "have") {
+    if (!have.length) return toast("You haven't checked any states yet");
+    text = `States I have (${have.length}) — ${sum(have)}:\n` + lines(have, () => "☑");
+    msg = "Copied states you have";
+  } else if (filter === "need") {
+    if (!need.length) return toast("You have them all!");
+    text = `States I still need (${need.length}) — ${sum(need)}:\n` + lines(need, () => "☐");
+    msg = "Copied states you don't have";
+  } else {
+    if (!sel.length) return toast("Select some states first");
+    text = `Selected states (${sel.length}) — total ${sum(sel)}:\n` + lines(sel, () => "•");
+    msg = "Copied selected states";
+  }
+  copy(text, msg);
 });
 
 $("openSettings").addEventListener("click", () => $("settings").showModal());
 $("closeSettings").addEventListener("click", () => $("settings").close());
-$("shareText").addEventListener("click", () => copy(listAsText(list), "Blank list copied as text"));
 $("clearChecks").addEventListener("click", (e) => {
   if (!armed(e.currentTarget, "Tap again to uncheck all")) return;
   checked.clear(); save(CHECK_KEY, []); render(); toast("All unchecked");
