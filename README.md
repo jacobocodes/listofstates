@@ -6,4 +6,4 @@ A single-page web app for tracking which states you have.
 - Filter to **Have** / **Don't have**, search, and copy a list of the states you still need.
 - **Settings** lets you edit the list (names, costs, notes), then share a blank copy by link or as plain text. Opening the link gives the recipient their own copy with nothing checked.
 
-Everything is saved in your browser (localStorage). No server needed: open `index.html` directly, or host it with GitHub Pages.
+Everything is saved in your browser (localStorage). No server needed: open `index.html` directly, or host it with GitHub Pages. To share a blank copy, use the share link (hosted version) or "Copy blank list as text", which the recipient can paste into Settings → Import a list.

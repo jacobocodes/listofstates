@@ -20,7 +20,8 @@
     --danger: #dc2626;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
       --bg: #12151b;
       --card: #1b2029;
       --text: #e7eaf0;
@@ -34,6 +35,21 @@
       --need-soft: #33290f;
       --danger: #f87171;
     }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #12151b;
+    --card: #1b2029;
+    --text: #e7eaf0;
+    --muted: #98a1b2;
+    --border: #2c3340;
+    --accent: #6b9bff;
+    --accent-soft: #1f2a44;
+    --have: #4ade80;
+    --have-soft: #16301f;
+    --need: #fbbf24;
+    --need-soft: #33290f;
+    --danger: #f87171;
   }
   * { box-sizing: border-box; }
   body {
@@ -84,7 +100,7 @@
   li.checked .name { text-decoration: line-through; text-decoration-color: var(--muted); }
   .empty { padding: 24px; text-align: center; color: var(--muted); }
   .missing-box { margin-top: 16px; }
-  .missing-box textarea { width: 100%; min-height: 80px; font: inherit; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+  .missing-box textarea, #importInput { width: 100%; min-height: 80px; font: inherit; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
   .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 
   dialog {
@@ -102,6 +118,10 @@
   .edit-row { display: grid; grid-template-columns: 1fr 90px 1fr 36px; gap: 6px; margin-bottom: 6px; }
   .edit-row.head { font-size: .75rem; color: var(--muted); }
   .edit-row button { padding: 4px; }
+  button.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #copyBox { margin-top: 10px; }
+  #copyBox textarea { width: 100%; min-height: 120px; font: inherit; font-size: .85rem; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
   .toast {
     position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
     background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px;
@@ -122,7 +142,7 @@
 <main>
   <header>
     <h1 id="title">State Checklist</h1>
-    <button id="openSettings" aria-label="Settings">⚙️ Settings</button>
+    <button id="openSettings">Settings</button>
   </header>
 
   <div id="importBanner" class="banner" hidden>
@@ -156,6 +176,10 @@
     <div class="row-actions">
       <button id="copyMissing">Copy list of states I don't have</button>
     </div>
+    <div id="copyBox" hidden>
+      <p class="sub">Copying isn't allowed here. Select the text below and copy it yourself.</p>
+      <textarea id="copyText" readonly></textarea>
+    </div>
   </div>
 </main>
 
@@ -167,10 +191,19 @@
   <div class="dlg-body">
     <section class="card">
       <h3>Share a blank copy</h3>
-      <p>Sends the list below with nothing checked. Whoever opens the link gets their own copy to check off — it won't change yours.</p>
+      <p>Copies the list below with nothing checked. Whoever gets it has their own copy to check off, and it won't change yours.</p>
       <div class="row-actions">
         <button class="primary" id="shareLink">Copy share link</button>
-        <button id="shareText">Copy as plain text</button>
+        <button id="shareText">Copy blank list as text</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Import a list</h3>
+      <p>Paste a blank list someone copied for you (one state per line, like “☐ Ohio — $15.60”). It replaces your list and clears your check marks.</p>
+      <textarea id="importInput" rows="4" placeholder="☐ Michigan — $15.60"></textarea>
+      <div class="row-actions">
+        <button id="importBtn">Import list</button>
       </div>
     </section>
 
@@ -268,7 +301,7 @@ function render() {
   if (!shown.length) {
     const li = document.createElement("li");
     li.className = "empty";
-    li.textContent = filter === "need" && !q ? "You have them all! 🎉" : "No states match.";
+    li.textContent = filter === "need" && !q ? "You have them all!" : "No states match.";
     ul.appendChild(li);
     return;
   }
@@ -323,7 +356,7 @@ function renderEditor() {
     cost.addEventListener("change", () => { s.cost = parseFloat(cost.value) || 0; persist(); render(); });
     note.addEventListener("change", () => { s.note = note.value.trim(); persist(); render(); });
     del.addEventListener("click", () => {
-      if (!confirm(`Remove ${s.name || "this row"}?`)) return;
+      if (!armed(del, "Sure?")) return;
       list.splice(i, 1); persist(); renderEditor(); render();
     });
     row.append(name, cost, note, del);
@@ -354,8 +387,38 @@ function listAsText(l) {
 }
 
 async function copy(text, msg) {
-  try { await navigator.clipboard.writeText(text); toast(msg); }
-  catch { prompt("Copy this:", text); }
+  try { await navigator.clipboard.writeText(text); toast(msg); $("copyBox").hidden = true; }
+  catch {
+    const box = $("copyBox");
+    const dlg = $("settings");
+    (dlg.open ? dlg.querySelector(".dlg-body") : document.querySelector("main")).prepend(box);
+    $("copyText").value = text;
+    box.hidden = false;
+    $("copyText").focus();
+    $("copyText").select();
+  }
+}
+
+// Two-tap confirmation: first tap arms the button, second tap within 3s does it.
+function armed(btn, label) {
+  if (btn.classList.contains("armed")) return true;
+  const original = btn.textContent;
+  btn.classList.add("armed");
+  btn.textContent = label;
+  setTimeout(() => { btn.classList.remove("armed"); btn.textContent = original; }, 3000);
+  return false;
+}
+
+function parseTextList(text) {
+  const out = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/^\s*(☐|☑|✅|\[.?\]|[-*•])\s*/, "").trim();
+    if (!line) continue;
+    const m = line.match(/^(.*?)\s*[—–:|-]?\s*\$\s*([\d,]+(?:\.\d+)?)\s*(?:\((.*)\))?\s*$/);
+    if (m && m[1].trim()) out.push({ name: m[1].replace(/[—–:|-]\s*$/, "").trim(), cost: parseFloat(m[2].replace(/,/g, "")), note: (m[3] || "").trim() });
+    else if (!/^states i still need/i.test(line)) out.push({ name: line, cost: 0, note: "" });
+  }
+  return out;
 }
 let toastTimer;
 function toast(msg) {
@@ -403,6 +466,16 @@ $("openSettings").addEventListener("click", () => { renderEditor(); $("settings"
 $("closeSettings").addEventListener("click", () => $("settings").close());
 $("shareLink").addEventListener("click", () => copy(shareUrl(), "Share link copied"));
 $("shareText").addEventListener("click", () => copy(listAsText(list), "Blank list copied as text"));
+$("importBtn").addEventListener("click", (e) => {
+  const incoming = parseTextList($("importInput").value);
+  if (!incoming.length) return toast("Paste a list first");
+  if (!armed(e.currentTarget, `Tap again to replace with ${incoming.length} states`)) return;
+  list = incoming; checked = new Set(); persist(); renderEditor(); render();
+  $("importInput").value = "";
+  toast(`Imported ${incoming.length} states`);
+});
+// Share links need the page's own URL, which isn't available when it's embedded in another page.
+if (window.self !== window.top) $("shareLink").hidden = true;
 $("addRow").addEventListener("click", () => {
   list.push({ name: "", cost: 0, note: "" });
   persist(); renderEditor();
@@ -413,12 +486,12 @@ $("sortRows").addEventListener("click", () => {
   list.sort((a, b) => a.cost - b.cost || a.name.localeCompare(b.name));
   persist(); renderEditor(); render();
 });
-$("clearChecks").addEventListener("click", () => {
-  if (!confirm("Uncheck every state?")) return;
+$("clearChecks").addEventListener("click", (e) => {
+  if (!armed(e.currentTarget, "Tap again to uncheck all")) return;
   checked.clear(); persist(); render(); toast("All unchecked");
 });
-$("resetList").addEventListener("click", () => {
-  if (!confirm("Restore the original list? Your edits will be lost (check marks on matching states are kept).")) return;
+$("resetList").addEventListener("click", (e) => {
+  if (!armed(e.currentTarget, "Tap again to restore")) return;
   list = structuredClone(DEFAULT_LIST); persist(); renderEditor(); render(); toast("Original list restored");
 });
 
