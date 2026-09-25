@@ -52,6 +52,7 @@
     --danger: #f87171;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body {
     margin: 0;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -150,15 +151,33 @@
   @media (max-width: 520px) {
     .stat .value { font-size: 1.2rem; }
     .tabs[role=tablist] { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
-        }
+  }
+  .header-actions { display: flex; gap: 8px; flex: none; }
+  .header-actions button { white-space: nowrap; }
+  .auth-form { display: grid; gap: 10px; }
+  .auth-form label { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); }
+  .auth-form input { width: 100%; }
+  .link-btn { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; font-size: .9rem; justify-self: start; }
+  .auth-msg { margin: 0; font-size: .9rem; }
+  .auth-msg.error { color: var(--danger); }
+  .auth-msg.ok { color: var(--have); }
+  .sync-line { font-size: .85rem; color: var(--muted); margin: -8px 0 12px; }
+  input[type="email"], input[type="password"] {
+    font: inherit; color: var(--text); background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; min-width: 0;
+  }
 </style>
 </head>
 <body>
 <main>
   <header>
     <h1 id="title">State Checklist</h1>
-    <button id="openSettings">Settings</button>
+    <div class="header-actions">
+      <button id="openAccount" hidden>Sign in</button>
+      <button id="openSettings">Settings</button>
+    </div>
   </header>
+  <p class="sync-line" id="syncLine" hidden></p>
 
   <div class="summary">
     <div class="stat have"><div class="label">Have</div><div class="value" id="haveCount">0</div><div class="sub" id="haveCost"></div></div>
@@ -225,9 +244,53 @@
   </div>
 </dialog>
 
+<dialog id="account">
+  <div class="dlg-head">
+    <h2 id="accountTitle">Sign in</h2>
+    <button id="closeAccount">Close</button>
+  </div>
+  <div class="dlg-body">
+    <!-- Signed out: sign in or create an account -->
+    <form class="auth-form" id="signinForm">
+      <p class="auth-msg">Sign in to keep your check marks in sync on every device.</p>
+      <label>Email <input type="email" id="authEmail" autocomplete="email" required></label>
+      <label>Password <input type="password" id="authPassword" autocomplete="current-password" required></label>
+      <p class="auth-msg" id="authMsg" hidden></p>
+      <div class="row-actions">
+        <button class="primary" type="submit" id="signinBtn">Sign in</button>
+        <button type="button" id="signupBtn">Create account</button>
+      </div>
+      <button type="button" class="link-btn" id="forgotBtn">Forgot password?</button>
+    </form>
+
+    <!-- After following a password reset email -->
+    <form class="auth-form" id="resetForm" hidden>
+      <p class="auth-msg">Choose a new password.</p>
+      <label>New password <input type="password" id="newPassword" autocomplete="new-password" minlength="6" required></label>
+      <p class="auth-msg" id="resetMsg" hidden></p>
+      <div class="row-actions"><button class="primary" type="submit">Save password</button></div>
+    </form>
+
+    <!-- Signed in -->
+    <div id="signedIn" hidden>
+      <section class="card">
+        <h3>Signed in</h3>
+        <p>You're signed in as <strong id="accountEmail"></strong>. Your check marks and calculator picks sync to any device where you sign in.</p>
+        <div class="row-actions"><button class="danger" id="signoutBtn">Sign out</button></div>
+      </section>
+    </div>
+  </div>
+</dialog>
+
 <div class="toast" id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
+// Accounts and syncing use Supabase. Paste your project's URL and public (anon) key here;
+// leave them empty and the app still works, saving only on this device.
+const SUPABASE_URL = "";
+const SUPABASE_ANON_KEY = "";
+
 // Prices live here. Changing one and republishing updates it for everyone.
 const REQ = "Needs additional requirements";
 const STATES = [
@@ -327,8 +390,7 @@ function render() {
     cb.checked = isOn;
     cb.addEventListener("change", () => {
       cb.checked ? set.add(s.name) : set.delete(s.name);
-      save(calc ? PICK_KEY : CHECK_KEY, [...set]);
-      render();
+      changed();
     });
     const name = document.createElement("span");
     name.className = "name";
@@ -352,6 +414,14 @@ function render() {
     li.appendChild(label);
     ul.appendChild(li);
   }
+}
+
+// Save locally, redraw, and (when signed in) sync to the account.
+function changed() {
+  save(CHECK_KEY, [...checked]);
+  save(PICK_KEY, [...picked]);
+  render();
+  schedulePush();
 }
 
 async function copy(text, msg) {
@@ -404,10 +474,10 @@ document.querySelectorAll(".tabs[role=tablist] button").forEach((b) =>
 $("search").addEventListener("input", render);
 $("calcNeed").addEventListener("click", () => {
   picked = new Set(list.filter((s) => !checked.has(s.name)).map((s) => s.name));
-  save(PICK_KEY, [...picked]); render();
+  changed();
 });
 $("calcClear").addEventListener("click", () => {
-  picked.clear(); save(PICK_KEY, []); render();
+  picked.clear(); changed();
 });
 $("copyList").addEventListener("click", () => {
   const sum = (arr) => money(arr.reduce((t, s) => t + (Number(s.cost) || 0), 0));
@@ -439,13 +509,175 @@ $("openSettings").addEventListener("click", () => $("settings").showModal());
 $("closeSettings").addEventListener("click", () => $("settings").close());
 $("clearChecks").addEventListener("click", (e) => {
   if (!armed(e.currentTarget, "Tap again to uncheck all")) return;
-  checked.clear(); save(CHECK_KEY, []); render(); toast("All unchecked");
+  checked.clear(); changed(); toast("All unchecked");
 });
 
 $("clearPicks").addEventListener("click", (e) => {
   if (!armed(e.currentTarget, "Tap again to clear")) return;
-  picked.clear(); save(PICK_KEY, []); render(); toast("Calculator cleared");
+  picked.clear(); changed(); toast("Calculator cleared");
 });
+
+// ---- Accounts & sync ----
+const sb = SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+let currentUser = null;
+let pushTimer = null;
+let pushing = Promise.resolve();
+
+function setSyncLine(text) {
+  $("syncLine").hidden = !text;
+  $("syncLine").textContent = text || "";
+}
+
+function schedulePush() {
+  if (!sb || !currentUser) return;
+  setSyncLine("Saving…");
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => { pushTimer = null; pushing = pushing.then(push); }, 600);
+}
+
+async function push() {
+  if (!currentUser) return;
+  const { error } = await sb.from("progress").upsert({
+    user_id: currentUser.id,
+    checked: [...checked],
+    picked: [...picked],
+    updated_at: new Date().toISOString(),
+  });
+  setSyncLine(error ? "Couldn't sync. Your changes are saved on this device and will sync next time." : `Synced to ${currentUser.email}`);
+}
+
+// Load the account's saved progress. If the account has none yet, upload this device's.
+async function pull() {
+  if (!currentUser) return;
+  const { data, error } = await sb.from("progress").select("checked, picked").eq("user_id", currentUser.id).maybeSingle();
+  if (error) { setSyncLine("Couldn't load your saved progress. Try reloading the page."); return; }
+  if (data) {
+    checked = new Set(data.checked || []);
+    picked = new Set(data.picked || []);
+    save(CHECK_KEY, [...checked]);
+    save(PICK_KEY, [...picked]);
+    render();
+    setSyncLine(`Synced to ${currentUser.email}`);
+  } else {
+    await push();
+  }
+}
+
+function showAuthView(view) {
+  $("signinForm").hidden = view !== "signin";
+  $("resetForm").hidden = view !== "reset";
+  $("signedIn").hidden = view !== "signedin";
+  $("accountTitle").textContent = { signin: "Sign in", reset: "Reset password", signedin: "Account" }[view];
+}
+
+function authMessage(id, text, kind) {
+  const el = $(id);
+  el.hidden = !text;
+  el.textContent = text || "";
+  el.className = "auth-msg" + (kind ? " " + kind : "");
+}
+
+function onSignedIn(user) {
+  const isNew = !currentUser || currentUser.id !== user.id;
+  currentUser = user;
+  $("openAccount").textContent = "Account";
+  $("accountEmail").textContent = user.email;
+  if (!$("resetForm").hidden) return;
+  showAuthView("signedin");
+  if (isNew) pull();
+}
+
+function onSignedOut() {
+  currentUser = null;
+  $("openAccount").textContent = "Sign in";
+  setSyncLine("");
+  showAuthView("signin");
+}
+
+if (sb) {
+  $("openAccount").hidden = false;
+
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event === "PASSWORD_RECOVERY") {
+      showAuthView("reset");
+      $("account").showModal();
+      return;
+    }
+    // Run outside the auth callback so Supabase calls made from it don't deadlock.
+    setTimeout(() => (session?.user ? onSignedIn(session.user) : onSignedOut()), 0);
+  });
+
+  $("openAccount").addEventListener("click", () => $("account").showModal());
+  $("closeAccount").addEventListener("click", () => $("account").close());
+
+  $("signinForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    authMessage("authMsg", "Signing in…");
+    const { error } = await sb.auth.signInWithPassword({ email: $("authEmail").value.trim(), password: $("authPassword").value });
+    if (error) return authMessage("authMsg", error.message === "Invalid login credentials" ? "Wrong email or password." : error.message, "error");
+    authMessage("authMsg", "");
+    $("authPassword").value = "";
+    $("account").close();
+    toast("Signed in");
+  });
+
+  $("signupBtn").addEventListener("click", async () => {
+    const form = $("signinForm");
+    if (!form.reportValidity()) return;
+    if ($("authPassword").value.length < 6) return authMessage("authMsg", "Use a password with at least 6 characters.", "error");
+    authMessage("authMsg", "Creating your account…");
+    const { data, error } = await sb.auth.signUp({
+      email: $("authEmail").value.trim(),
+      password: $("authPassword").value,
+      options: { emailRedirectTo: location.origin + location.pathname },
+    });
+    if (error) return authMessage("authMsg", error.message, "error");
+    $("authPassword").value = "";
+    if (data.session) { authMessage("authMsg", ""); $("account").close(); toast("Account created"); }
+    else authMessage("authMsg", "Check your email and tap the link to confirm your account, then sign in here.", "ok");
+  });
+
+  $("forgotBtn").addEventListener("click", async () => {
+    const email = $("authEmail").value.trim();
+    if (!email) { $("authEmail").focus(); return authMessage("authMsg", "Enter your email above first.", "error"); }
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+    if (error) return authMessage("authMsg", error.message, "error");
+    authMessage("authMsg", "If there's an account for that email, a reset link is on its way.", "ok");
+  });
+
+  $("resetForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const { data, error } = await sb.auth.updateUser({ password: $("newPassword").value });
+    if (error) return authMessage("resetMsg", error.message, "error");
+    $("newPassword").value = "";
+    authMessage("resetMsg", "");
+    showAuthView("signedin");
+    onSignedIn(data.user);
+    $("account").close();
+    toast("Password updated");
+  });
+
+  $("signoutBtn").addEventListener("click", async () => {
+    clearTimeout(pushTimer);
+    await pushing;
+    await sb.auth.signOut();
+    // Signing out leaves this device blank so the next person doesn't see your list.
+    checked = new Set();
+    picked = new Set();
+    save(CHECK_KEY, []);
+    save(PICK_KEY, []);
+    render();
+    $("account").close();
+    toast("Signed out");
+  });
+
+  // Pick up changes made on another device when coming back to this tab.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && currentUser && !pushTimer) pushing = pushing.then(pull);
+  });
+}
 
 render();
 </script>
