@@ -13,6 +13,7 @@
     --border: #e3e6eb;
     --accent: #2563eb;
     --accent-soft: #e8efff;
+    --on-accent: #ffffff;
     --have: #15803d;
     --have-soft: #e6f6ec;
     --need: #b45309;
@@ -29,6 +30,8 @@
       --border: #2c3340;
       --accent: #6b9bff;
       --accent-soft: #1f2a44;
+    --on-accent: #0b1220;
+      --on-accent: #0b1220;
       --have: #4ade80;
       --have-soft: #16301f;
       --need: #fbbf24;
@@ -69,7 +72,7 @@
     padding: 8px 12px;
   }
   button:hover { border-color: var(--accent); }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   button.danger { color: var(--danger); }
   .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
   .stat { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
@@ -161,6 +164,12 @@
   .auth-msg { margin: 0; font-size: .9rem; }
   .auth-msg.error { color: var(--danger); }
   .auth-msg.ok { color: var(--have); }
+  .signin-banner {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 12px;
+    padding: 10px 14px; margin-bottom: 14px;
+  }
+  .signin-banner p { margin: 0; font-size: .95rem; }
   .sync-line { font-size: .85rem; color: var(--muted); margin: -8px 0 12px; }
   input[type="email"], input[type="password"] {
     font: inherit; color: var(--text); background: var(--card);
@@ -178,6 +187,10 @@
     </div>
   </header>
   <p class="sync-line" id="syncLine" hidden></p>
+  <div class="signin-banner" id="signinBanner" hidden>
+    <p><strong>Sign in to save your progress.</strong> Without an account, your check marks stay on this device only.</p>
+    <button class="primary" id="bannerSignin">Sign in or create account</button>
+  </div>
 
   <div class="summary">
     <div class="stat have"><div class="label">Have</div><div class="value" id="haveCount">0</div><div class="sub" id="haveCost"></div></div>
@@ -252,7 +265,7 @@
   <div class="dlg-body">
     <!-- Signed out: sign in or create an account -->
     <form class="auth-form" id="signinForm">
-      <p class="auth-msg">Sign in to keep your check marks in sync on every device.</p>
+      <p class="auth-msg" id="authIntro">Sign in to keep your check marks in sync on every device.</p>
       <label>Email <input type="email" id="authEmail" autocomplete="email" required></label>
       <label>Password <input type="password" id="authPassword" autocomplete="current-password" required></label>
       <p class="auth-msg" id="authMsg" hidden></p>
@@ -422,6 +435,16 @@ function changed() {
   save(PICK_KEY, [...picked]);
   render();
   schedulePush();
+  nudgeSignin();
+}
+
+// The first time someone checks something while signed out, ask them to sign in (once per visit).
+let nudged = false;
+function nudgeSignin() {
+  if (!sb || currentUser || nudged) return;
+  nudged = true;
+  $("authIntro").textContent = "Sign in or create an account to save your check marks. They'll be there on any device you sign in on.";
+  $("account").showModal();
 }
 
 async function copy(text, msg) {
@@ -583,6 +606,7 @@ function onSignedIn(user) {
   const isNew = !currentUser || currentUser.id !== user.id;
   currentUser = user;
   $("openAccount").textContent = "Account";
+  $("signinBanner").hidden = true;
   $("accountEmail").textContent = user.email;
   if (!$("resetForm").hidden) return;
   showAuthView("signedin");
@@ -592,6 +616,7 @@ function onSignedIn(user) {
 function onSignedOut() {
   currentUser = null;
   $("openAccount").textContent = "Sign in";
+  $("signinBanner").hidden = false;
   setSyncLine("");
   showAuthView("signin");
 }
@@ -610,6 +635,7 @@ if (sb) {
   });
 
   $("openAccount").addEventListener("click", () => $("account").showModal());
+  $("bannerSignin").addEventListener("click", () => $("account").showModal());
   $("closeAccount").addEventListener("click", () => $("account").close());
 
   $("signinForm").addEventListener("submit", async (e) => {
