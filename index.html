@@ -100,7 +100,7 @@
   li.checked .name { text-decoration: line-through; text-decoration-color: var(--muted); }
   .empty { padding: 24px; text-align: center; color: var(--muted); }
   .missing-box { margin-top: 16px; }
-  .missing-box textarea, #importInput { width: 100%; min-height: 80px; font: inherit; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+  .missing-box textarea { width: 100%; min-height: 80px; font: inherit; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
   .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 
   dialog {
@@ -122,6 +122,25 @@
   button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   #copyBox { margin-top: 10px; }
   #copyBox textarea { width: 100%; min-height: 120px; font: inherit; font-size: .85rem; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  .calc-bar {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2;
+    background: var(--card); border: 1px solid var(--accent); border-radius: 12px;
+    padding: 12px 14px; margin-bottom: 12px;
+  }
+  .calc-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-end; }
+  .calc-right { text-align: right; }
+  .calc-bar .label { font-size: .8rem; color: var(--muted); }
+  .calc-num { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #calcTotal { color: var(--accent); }
+  .calc-bar .row-actions { gap: 6px; }
+  .calc-bar button { padding: 5px 10px; font-size: .9rem; }
+  .calc-bar .sub { margin: 6px 0 0; font-size: .85rem; color: var(--muted); }
+  ul.list.calc li.checked { background: none; }
+  ul.list.calc li.checked .name { text-decoration: none; }
+  ul.list.calc li.picked { background: var(--accent-soft); }
+  ul.list.calc input[type="checkbox"] { accent-color: var(--accent); }
+  .have-tag { display: inline-block; font-size: .75rem; color: var(--have); background: var(--have-soft); border-radius: 99px; padding: 1px 8px; margin-left: 6px; }
+  .tabs { flex-wrap: wrap; }
   .toast {
     position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
     background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px;
@@ -166,8 +185,21 @@
       <button data-filter="all" class="active">All</button>
       <button data-filter="have">Have</button>
       <button data-filter="need">Don't have</button>
+      <button data-filter="calc">Cost calculator</button>
     </div>
     <input type="search" id="search" placeholder="Search states…">
+  </div>
+
+  <div id="calcBar" class="calc-bar" hidden>
+    <div class="calc-head">
+      <div><div class="label">Selected</div><div class="calc-num" id="calcCount">0 states</div></div>
+      <div class="calc-right"><div class="label">Total cost</div><div class="calc-num" id="calcTotal">$0.00</div></div>
+    </div>
+    <p class="sub">Tick states to add up what they'd cost together. This doesn't change your checklist.</p>
+    <div class="row-actions">
+      <button id="calcNeed">Select all I don't have</button>
+      <button id="calcClear">Clear selection</button>
+    </div>
   </div>
 
   <ul class="list" id="list"></ul>
@@ -195,15 +227,6 @@
       <div class="row-actions">
         <button class="primary" id="shareLink">Copy share link</button>
         <button id="shareText">Copy blank list as text</button>
-      </div>
-    </section>
-
-    <section class="card">
-      <h3>Import a list</h3>
-      <p>Paste a blank list someone copied for you (one state per line, like “☐ Ohio — $15.60”). It replaces your list and clears your check marks.</p>
-      <textarea id="importInput" rows="4" placeholder="☐ Michigan — $15.60"></textarea>
-      <div class="row-actions">
-        <button id="importBtn">Import list</button>
       </div>
     </section>
 
@@ -252,6 +275,7 @@ const DEFAULT_LIST = [
 
 const LIST_KEY = "states.list.v1";
 const CHECK_KEY = "states.checked.v1";
+const PICK_KEY = "states.calc.v1";
 
 function load(key, fallback) {
   try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; }
@@ -263,10 +287,11 @@ function save(key, value) {
 
 let list = load(LIST_KEY, null) || structuredClone(DEFAULT_LIST);
 let checked = new Set(load(CHECK_KEY, []));
+let picked = new Set(load(PICK_KEY, []));
 let filter = "all";
 
 const $ = (id) => document.getElementById(id);
-const money = (n) => "$" + (Number(n) || 0).toFixed(2);
+const money = (n) => "$" + (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function persist() {
   save(LIST_KEY, list);
@@ -274,6 +299,8 @@ function persist() {
   const names = new Set(list.map((s) => s.name));
   checked = new Set([...checked].filter((n) => names.has(n)));
   save(CHECK_KEY, [...checked]);
+  picked = new Set([...picked].filter((n) => names.has(n)));
+  save(PICK_KEY, [...picked]);
 }
 
 function render() {
@@ -288,6 +315,15 @@ function render() {
   $("needCost").textContent = money(sum(need)) + " to get";
   $("totalCost").textContent = money(sum(list));
   $("progressBar").style.width = list.length ? (have.length / list.length * 100) + "%" : "0";
+
+  const calc = filter === "calc";
+  $("calcBar").hidden = !calc;
+  $("list").classList.toggle("calc", calc);
+  if (calc) {
+    const sel = list.filter((s) => picked.has(s.name));
+    $("calcCount").textContent = sel.length + (sel.length === 1 ? " state" : " states");
+    $("calcTotal").textContent = money(sum(sel));
+  }
 
   const q = $("search").value.trim().toLowerCase();
   const shown = list.filter((s) => {
@@ -307,15 +343,17 @@ function render() {
   }
   for (const s of shown) {
     const li = document.createElement("li");
-    const isOn = checked.has(s.name);
-    if (isOn) li.className = "checked";
+    const set = calc ? picked : checked;
+    const isOn = set.has(s.name);
+    li.classList.toggle("checked", checked.has(s.name));
+    li.classList.toggle("picked", calc && isOn);
     const label = document.createElement("label");
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = isOn;
     cb.addEventListener("change", () => {
-      cb.checked ? checked.add(s.name) : checked.delete(s.name);
-      save(CHECK_KEY, [...checked]);
+      cb.checked ? set.add(s.name) : set.delete(s.name);
+      save(calc ? PICK_KEY : CHECK_KEY, [...set]);
       render();
     });
     const name = document.createElement("span");
@@ -326,6 +364,12 @@ function render() {
       note.className = "note";
       note.textContent = s.note;
       name.appendChild(note);
+    }
+    if (calc && checked.has(s.name)) {
+      const tag = document.createElement("span");
+      tag.className = "have-tag";
+      tag.textContent = "Have";
+      name.appendChild(tag);
     }
     const cost = document.createElement("span");
     cost.className = "cost";
@@ -350,7 +394,7 @@ function renderEditor() {
     name.addEventListener("change", () => {
       const old = s.name;
       s.name = name.value.trim();
-      if (checked.has(old)) { checked.delete(old); if (s.name) checked.add(s.name); }
+      for (const set of [checked, picked]) if (set.has(old)) { set.delete(old); if (s.name) set.add(s.name); }
       persist(); render();
     });
     cost.addEventListener("change", () => { s.cost = parseFloat(cost.value) || 0; persist(); render(); });
@@ -408,18 +452,6 @@ function armed(btn, label) {
   setTimeout(() => { btn.classList.remove("armed"); btn.textContent = original; }, 3000);
   return false;
 }
-
-function parseTextList(text) {
-  const out = [];
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.replace(/^\s*(☐|☑|✅|\[.?\]|[-*•])\s*/, "").trim();
-    if (!line) continue;
-    const m = line.match(/^(.*?)\s*[—–:|-]?\s*\$\s*([\d,]+(?:\.\d+)?)\s*(?:\((.*)\))?\s*$/);
-    if (m && m[1].trim()) out.push({ name: m[1].replace(/[—–:|-]\s*$/, "").trim(), cost: parseFloat(m[2].replace(/,/g, "")), note: (m[3] || "").trim() });
-    else if (!/^states i still need/i.test(line)) out.push({ name: line, cost: 0, note: "" });
-  }
-  return out;
-}
 let toastTimer;
 function toast(msg) {
   const t = $("toast");
@@ -456,6 +488,13 @@ document.querySelectorAll(".tabs button").forEach((b) =>
   })
 );
 $("search").addEventListener("input", render);
+$("calcNeed").addEventListener("click", () => {
+  picked = new Set(list.filter((s) => !checked.has(s.name)).map((s) => s.name));
+  save(PICK_KEY, [...picked]); render();
+});
+$("calcClear").addEventListener("click", () => {
+  picked.clear(); save(PICK_KEY, []); render();
+});
 $("copyMissing").addEventListener("click", () => {
   const need = list.filter((s) => !checked.has(s.name));
   if (!need.length) return toast("You have them all!");
@@ -466,14 +505,6 @@ $("openSettings").addEventListener("click", () => { renderEditor(); $("settings"
 $("closeSettings").addEventListener("click", () => $("settings").close());
 $("shareLink").addEventListener("click", () => copy(shareUrl(), "Share link copied"));
 $("shareText").addEventListener("click", () => copy(listAsText(list), "Blank list copied as text"));
-$("importBtn").addEventListener("click", (e) => {
-  const incoming = parseTextList($("importInput").value);
-  if (!incoming.length) return toast("Paste a list first");
-  if (!armed(e.currentTarget, `Tap again to replace with ${incoming.length} states`)) return;
-  list = incoming; checked = new Set(); persist(); renderEditor(); render();
-  $("importInput").value = "";
-  toast(`Imported ${incoming.length} states`);
-});
 // Share links need the page's own URL, which isn't available when it's embedded in another page.
 if (window.self !== window.top) $("shareLink").hidden = true;
 $("addRow").addEventListener("click", () => {
