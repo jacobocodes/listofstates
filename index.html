@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>State Checklist</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1d2330;
+    --muted: #6b7280;
+    --border: #e3e6eb;
+    --accent: #2563eb;
+    --accent-soft: #e8efff;
+    --have: #15803d;
+    --have-soft: #e6f6ec;
+    --need: #b45309;
+    --need-soft: #fdf2e3;
+    --danger: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b;
+      --card: #1b2029;
+      --text: #e7eaf0;
+      --muted: #98a1b2;
+      --border: #2c3340;
+      --accent: #6b9bff;
+      --accent-soft: #1f2a44;
+      --have: #4ade80;
+      --have-soft: #16301f;
+      --need: #fbbf24;
+      --need-soft: #33290f;
+      --danger: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.4;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 16px 16px 48px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 16px; }
+  h1 { font-size: 1.4rem; margin: 0; }
+  button {
+    font: inherit; cursor: pointer; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--card); color: var(--text);
+    padding: 8px 12px;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: var(--danger); }
+  .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+  .stat .label { font-size: .8rem; color: var(--muted); }
+  .stat .value { font-size: 1.5rem; font-weight: 700; }
+  .stat .sub { font-size: .8rem; color: var(--muted); }
+  .stat.have .value { color: var(--have); }
+  .stat.need .value { color: var(--need); }
+  .progress { height: 8px; background: var(--border); border-radius: 99px; overflow: hidden; margin-bottom: 16px; }
+  .progress > div { height: 100%; background: var(--have); width: 0; transition: width .2s; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .tabs { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .tabs button { border: 0; border-radius: 0; padding: 8px 12px; }
+  .tabs button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  input[type="search"], input[type="text"], input[type="number"] {
+    font: inherit; color: var(--text); background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; min-width: 0;
+  }
+  .controls input[type="search"] { flex: 1 1 160px; }
+  ul.list { list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  ul.list li { border-top: 1px solid var(--border); }
+  ul.list li:first-child { border-top: 0; }
+  ul.list label { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; }
+  ul.list li.checked { background: var(--have-soft); }
+  ul.list input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--have); flex: none; }
+  .name { flex: 1; min-width: 0; }
+  .note { display: inline-block; font-size: .75rem; color: var(--need); background: var(--need-soft); border-radius: 99px; padding: 1px 8px; margin-left: 6px; }
+  .cost { font-variant-numeric: tabular-nums; color: var(--muted); }
+  li.checked .name { text-decoration: line-through; text-decoration-color: var(--muted); }
+  .empty { padding: 24px; text-align: center; color: var(--muted); }
+  .missing-box { margin-top: 16px; }
+  .missing-box textarea { width: 100%; min-height: 80px; font: inherit; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+  .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+  dialog {
+    border: 1px solid var(--border); border-radius: 14px; padding: 0;
+    background: var(--bg); color: var(--text);
+    width: min(720px, calc(100vw - 16px)); max-height: calc(100vh - 32px);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  .dlg-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg); z-index: 1; }
+  .dlg-head h2 { margin: 0; font-size: 1.15rem; }
+  .dlg-body { padding: 16px; }
+  section.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+  section.card h3 { margin: 0 0 4px; font-size: 1rem; }
+  section.card p { margin: 0 0 10px; color: var(--muted); font-size: .9rem; }
+  .edit-row { display: grid; grid-template-columns: 1fr 90px 1fr 36px; gap: 6px; margin-bottom: 6px; }
+  .edit-row.head { font-size: .75rem; color: var(--muted); }
+  .edit-row button { padding: 4px; }
+  .toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px;
+    opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 10;
+  }
+  .toast.show { opacity: 1; }
+  .banner { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+  .banner .row-actions { margin-top: 10px; }
+  @media (max-width: 520px) {
+    .stat .value { font-size: 1.2rem; }
+    .edit-row { grid-template-columns: 1fr 72px 36px; }
+    .edit-row .note-input { grid-column: 1 / 3; }
+    .edit-row.head span:nth-child(3) { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 id="title">State Checklist</h1>
+    <button id="openSettings" aria-label="Settings">⚙️ Settings</button>
+  </header>
+
+  <div id="importBanner" class="banner" hidden>
+    <strong>Someone shared a list with you.</strong>
+    <div id="importText"></div>
+    <div class="row-actions">
+      <button class="primary" id="importYes">Use this list</button>
+      <button id="importNo">Keep my current list</button>
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="stat have"><div class="label">Have</div><div class="value" id="haveCount">0</div><div class="sub" id="haveCost"></div></div>
+    <div class="stat need"><div class="label">Don't have</div><div class="value" id="needCount">0</div><div class="sub" id="needCost"></div></div>
+    <div class="stat"><div class="label">Total</div><div class="value" id="totalCount">0</div><div class="sub" id="totalCost"></div></div>
+  </div>
+  <div class="progress"><div id="progressBar"></div></div>
+
+  <div class="controls">
+    <div class="tabs" role="tablist">
+      <button data-filter="all" class="active">All</button>
+      <button data-filter="have">Have</button>
+      <button data-filter="need">Don't have</button>
+    </div>
+    <input type="search" id="search" placeholder="Search states…">
+  </div>
+
+  <ul class="list" id="list"></ul>
+
+  <div class="missing-box">
+    <div class="row-actions">
+      <button id="copyMissing">Copy list of states I don't have</button>
+    </div>
+  </div>
+</main>
+
+<dialog id="settings">
+  <div class="dlg-head">
+    <h2>Settings</h2>
+    <button id="closeSettings">Done</button>
+  </div>
+  <div class="dlg-body">
+    <section class="card">
+      <h3>Share a blank copy</h3>
+      <p>Sends the list below with nothing checked. Whoever opens the link gets their own copy to check off — it won't change yours.</p>
+      <div class="row-actions">
+        <button class="primary" id="shareLink">Copy share link</button>
+        <button id="shareText">Copy as plain text</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Edit the list</h3>
+      <p>Change names, costs, or notes (e.g. “needs additional requirements”). Changes save automatically and are included when you share.</p>
+      <div class="edit-row head"><span>State</span><span>Cost</span><span>Note</span><span></span></div>
+      <div id="editRows"></div>
+      <div class="row-actions">
+        <button id="addRow">+ Add state</button>
+        <button id="sortRows">Sort by cost</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Reset</h3>
+      <p>Clear your check marks, or put the list back to the original.</p>
+      <div class="row-actions">
+        <button class="danger" id="clearChecks">Uncheck all</button>
+        <button class="danger" id="resetList">Restore original list</button>
+      </div>
+    </section>
+  </div>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const REQ = "Needs additional requirements";
+const DEFAULT_LIST = [
+  ["Michigan", 15.60], ["Ohio", 15.60], ["Virginia", 20.60], ["New Mexico", 30.00],
+  ["South Carolina", 30.60], ["South Dakota", 35.60], ["Texas", 55.60], ["Iowa", 55.60],
+  ["Kansas", 55.60], ["West Virginia", 55.60], ["Maryland", 59.60], ["Florida", 60.60, REQ],
+  ["Maine", 60.60], ["Washington", 60.60], ["Minnesota", 65.60], ["Arkansas", 75.60],
+  ["Colorado", 76.60], ["Alaska", 80.60], ["Louisiana", 80.60], ["Utah", 80.60],
+  ["Wisconsin", 80.60], ["Alabama", 85.60, REQ], ["Idaho", 85.60], ["New York", 85.60],
+  ["North Carolina", 99.60], ["Delaware", 105.60], ["District of Columbia", 105.60],
+  ["Kentucky", 105.60], ["Missouri", 105.60], ["Montana", 105.60], ["North Dakota", 105.60],
+  ["Oregon", 105.60], ["Mississippi", 106.60], ["Pennsylvania", 115.60], ["Arizona", 125.60],
+  ["Georgia", 125.60, REQ], ["Oklahoma", 125.60], ["Rhode Island", 135.60],
+  ["Connecticut", 145.60], ["Tennessee", 149.60], ["Wyoming", 155.60], ["New Jersey", 175.60],
+  ["Nevada", 190.60], ["Nebraska", 193.60], ["Indiana", 193.60], ["California", 193.60],
+  ["New Hampshire", 215.60], ["Vermont", 223.60], ["Hawaii", 230.60], ["Massachusetts", 230.60],
+  ["Illinois", 385.60],
+].map(([name, cost, note]) => ({ name, cost, note: note || "" }));
+
+const LIST_KEY = "states.list.v1";
+const CHECK_KEY = "states.checked.v1";
+
+function load(key, fallback) {
+  try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; }
+  catch { return fallback; }
+}
+function save(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
+let list = load(LIST_KEY, null) || structuredClone(DEFAULT_LIST);
+let checked = new Set(load(CHECK_KEY, []));
+let filter = "all";
+
+const $ = (id) => document.getElementById(id);
+const money = (n) => "$" + (Number(n) || 0).toFixed(2);
+
+function persist() {
+  save(LIST_KEY, list);
+  // Drop checks for states no longer in the list.
+  const names = new Set(list.map((s) => s.name));
+  checked = new Set([...checked].filter((n) => names.has(n)));
+  save(CHECK_KEY, [...checked]);
+}
+
+function render() {
+  const have = list.filter((s) => checked.has(s.name));
+  const need = list.filter((s) => !checked.has(s.name));
+  const sum = (arr) => arr.reduce((t, s) => t + (Number(s.cost) || 0), 0);
+
+  $("haveCount").textContent = have.length;
+  $("needCount").textContent = need.length;
+  $("totalCount").textContent = list.length;
+  $("haveCost").textContent = money(sum(have));
+  $("needCost").textContent = money(sum(need)) + " to get";
+  $("totalCost").textContent = money(sum(list));
+  $("progressBar").style.width = list.length ? (have.length / list.length * 100) + "%" : "0";
+
+  const q = $("search").value.trim().toLowerCase();
+  const shown = list.filter((s) => {
+    if (filter === "have" && !checked.has(s.name)) return false;
+    if (filter === "need" && checked.has(s.name)) return false;
+    return !q || s.name.toLowerCase().includes(q);
+  });
+
+  const ul = $("list");
+  ul.innerHTML = "";
+  if (!shown.length) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = filter === "need" && !q ? "You have them all! 🎉" : "No states match.";
+    ul.appendChild(li);
+    return;
+  }
+  for (const s of shown) {
+    const li = document.createElement("li");
+    const isOn = checked.has(s.name);
+    if (isOn) li.className = "checked";
+    const label = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = isOn;
+    cb.addEventListener("change", () => {
+      cb.checked ? checked.add(s.name) : checked.delete(s.name);
+      save(CHECK_KEY, [...checked]);
+      render();
+    });
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = s.name;
+    if (s.note) {
+      const note = document.createElement("span");
+      note.className = "note";
+      note.textContent = s.note;
+      name.appendChild(note);
+    }
+    const cost = document.createElement("span");
+    cost.className = "cost";
+    cost.textContent = money(s.cost);
+    label.append(cb, name, cost);
+    li.appendChild(label);
+    ul.appendChild(li);
+  }
+}
+
+function renderEditor() {
+  const box = $("editRows");
+  box.innerHTML = "";
+  list.forEach((s, i) => {
+    const row = document.createElement("div");
+    row.className = "edit-row";
+    const name = Object.assign(document.createElement("input"), { type: "text", value: s.name, placeholder: "State" });
+    const cost = Object.assign(document.createElement("input"), { type: "number", step: "0.01", min: "0", value: (Number(s.cost) || 0).toFixed(2), placeholder: "0.00" });
+    const note = Object.assign(document.createElement("input"), { type: "text", value: s.note, placeholder: "Note (optional)", className: "note-input" });
+    const del = Object.assign(document.createElement("button"), { textContent: "✕", title: "Remove", className: "danger" });
+
+    name.addEventListener("change", () => {
+      const old = s.name;
+      s.name = name.value.trim();
+      if (checked.has(old)) { checked.delete(old); if (s.name) checked.add(s.name); }
+      persist(); render();
+    });
+    cost.addEventListener("change", () => { s.cost = parseFloat(cost.value) || 0; persist(); render(); });
+    note.addEventListener("change", () => { s.note = note.value.trim(); persist(); render(); });
+    del.addEventListener("click", () => {
+      if (!confirm(`Remove ${s.name || "this row"}?`)) return;
+      list.splice(i, 1); persist(); renderEditor(); render();
+    });
+    row.append(name, cost, note, del);
+    box.appendChild(row);
+  });
+}
+
+// ---- Sharing ----
+function encodeList(l) {
+  const compact = l.filter((s) => s.name).map((s) => s.note ? [s.name, s.cost, s.note] : [s.name, s.cost]);
+  const bytes = new TextEncoder().encode(JSON.stringify(compact));
+  let bin = "";
+  bytes.forEach((b) => (bin += String.fromCharCode(b)));
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function decodeList(str) {
+  const bin = atob(str.replace(/-/g, "+").replace(/_/g, "/"));
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  const arr = JSON.parse(new TextDecoder().decode(bytes));
+  if (!Array.isArray(arr)) throw new Error("bad list");
+  return arr.map(([name, cost, note]) => ({ name: String(name), cost: Number(cost) || 0, note: note ? String(note) : "" }));
+}
+function shareUrl() {
+  return location.origin + location.pathname + "#list=" + encodeList(list);
+}
+function listAsText(l) {
+  return l.map((s) => `☐ ${s.name} — ${money(s.cost)}${s.note ? ` (${s.note})` : ""}`).join("\n");
+}
+
+async function copy(text, msg) {
+  try { await navigator.clipboard.writeText(text); toast(msg); }
+  catch { prompt("Copy this:", text); }
+}
+let toastTimer;
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+function checkForSharedList() {
+  const m = location.hash.match(/list=([^&]+)/);
+  if (!m) return;
+  let incoming;
+  try { incoming = decodeList(m[1]); } catch { return; }
+  const clearHash = () => history.replaceState(null, "", location.pathname + location.search);
+  const apply = () => {
+    list = incoming; checked = new Set(); persist(); render(); clearHash();
+  };
+  // First visit (nothing saved yet): just use the shared list.
+  if (load(LIST_KEY, null) === null && checked.size === 0) { apply(); return; }
+  $("importText").textContent =
+    `It has ${incoming.length} states. Using it will replace your current list and clear your ${checked.size} check mark(s).`;
+  $("importBanner").hidden = false;
+  $("importYes").onclick = () => { apply(); $("importBanner").hidden = true; toast("Shared list loaded"); };
+  $("importNo").onclick = () => { clearHash(); $("importBanner").hidden = true; };
+}
+
+// ---- Wiring ----
+document.querySelectorAll(".tabs button").forEach((b) =>
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("active", x === b));
+    filter = b.dataset.filter;
+    render();
+  })
+);
+$("search").addEventListener("input", render);
+$("copyMissing").addEventListener("click", () => {
+  const need = list.filter((s) => !checked.has(s.name));
+  if (!need.length) return toast("You have them all!");
+  copy(`States I still need (${need.length}):\n` + listAsText(need), "Copied states you don't have");
+});
+
+$("openSettings").addEventListener("click", () => { renderEditor(); $("settings").showModal(); });
+$("closeSettings").addEventListener("click", () => $("settings").close());
+$("shareLink").addEventListener("click", () => copy(shareUrl(), "Share link copied"));
+$("shareText").addEventListener("click", () => copy(listAsText(list), "Blank list copied as text"));
+$("addRow").addEventListener("click", () => {
+  list.push({ name: "", cost: 0, note: "" });
+  persist(); renderEditor();
+  const rows = $("editRows").querySelectorAll("input[type=text]:not(.note-input)");
+  rows[rows.length - 1].focus();
+});
+$("sortRows").addEventListener("click", () => {
+  list.sort((a, b) => a.cost - b.cost || a.name.localeCompare(b.name));
+  persist(); renderEditor(); render();
+});
+$("clearChecks").addEventListener("click", () => {
+  if (!confirm("Uncheck every state?")) return;
+  checked.clear(); persist(); render(); toast("All unchecked");
+});
+$("resetList").addEventListener("click", () => {
+  if (!confirm("Restore the original list? Your edits will be lost (check marks on matching states are kept).")) return;
+  list = structuredClone(DEFAULT_LIST); persist(); renderEditor(); render(); toast("Original list restored");
+});
+
+render();
+checkForSharedList();
+window.addEventListener("hashchange", checkForSharedList);
+</script>
+</body>
+</html>
