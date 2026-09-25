@@ -133,6 +133,9 @@
   .calc-num { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
   #calcTotal { color: var(--accent); }
   .calc-bar .row-actions { gap: 6px; }
+  .calc-show { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .tabs.small { width: fit-content; }
+  .tabs.small button { padding: 5px 10px; font-size: .9rem; }
   .calc-bar button { padding: 5px 10px; font-size: .9rem; }
   .calc-bar .sub { margin: 6px 0 0; font-size: .85rem; color: var(--muted); }
   ul.list.calc li.checked { background: none; }
@@ -151,6 +154,7 @@
   .banner .row-actions { margin-top: 10px; }
   @media (max-width: 520px) {
     .stat .value { font-size: 1.2rem; }
+    .tabs[role=tablist] { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
     .edit-row { grid-template-columns: 1fr 72px 36px; }
     .edit-row .note-input { grid-column: 1 / 3; }
     .edit-row.head span:nth-child(3) { display: none; }
@@ -196,6 +200,13 @@
       <div class="calc-right"><div class="label">Total cost</div><div class="calc-num" id="calcTotal">$0.00</div></div>
     </div>
     <p class="sub">Tick states to add up what they'd cost together. This doesn't change your checklist.</p>
+    <div class="calc-show">
+      <span class="label">Show</span>
+      <div class="tabs small" id="calcShow">
+        <button data-show="all" class="active">All states</button>
+        <button data-show="need">Only states I don't have</button>
+      </div>
+    </div>
     <div class="row-actions">
       <button id="calcNeed">Select all I don't have</button>
       <button id="calcClear">Clear selection</button>
@@ -289,6 +300,7 @@ let list = load(LIST_KEY, null) || structuredClone(DEFAULT_LIST);
 let checked = new Set(load(CHECK_KEY, []));
 let picked = new Set(load(PICK_KEY, []));
 let filter = "all";
+let calcShow = load("states.calcShow.v1", "all");
 
 const $ = (id) => document.getElementById(id);
 const money = (n) => "$" + (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -328,7 +340,7 @@ function render() {
   const q = $("search").value.trim().toLowerCase();
   const shown = list.filter((s) => {
     if (filter === "have" && !checked.has(s.name)) return false;
-    if (filter === "need" && checked.has(s.name)) return false;
+    if ((filter === "need" || (calc && calcShow === "need")) && checked.has(s.name)) return false;
     return !q || s.name.toLowerCase().includes(q);
   });
 
@@ -337,7 +349,7 @@ function render() {
   if (!shown.length) {
     const li = document.createElement("li");
     li.className = "empty";
-    li.textContent = filter === "need" && !q ? "You have them all!" : "No states match.";
+    li.textContent = (filter === "need" || (calc && calcShow === "need")) && !q ? "You have them all!" : "No states match.";
     ul.appendChild(li);
     return;
   }
@@ -480,9 +492,18 @@ function checkForSharedList() {
 }
 
 // ---- Wiring ----
-document.querySelectorAll(".tabs button").forEach((b) =>
+document.querySelectorAll("#calcShow button").forEach((b) => {
+  b.classList.toggle("active", b.dataset.show === calcShow);
   b.addEventListener("click", () => {
-    document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("active", x === b));
+    calcShow = b.dataset.show;
+    save("states.calcShow.v1", calcShow);
+    document.querySelectorAll("#calcShow button").forEach((x) => x.classList.toggle("active", x === b));
+    render();
+  });
+});
+document.querySelectorAll(".tabs[role=tablist] button").forEach((b) =>
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".tabs[role=tablist] button").forEach((x) => x.classList.toggle("active", x === b));
     filter = b.dataset.filter;
     render();
   })
